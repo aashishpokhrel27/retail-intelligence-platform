@@ -224,4 +224,3 @@ __pycache__/
 .databricks/
 .dbt/
 *.pyc
-.env.example
