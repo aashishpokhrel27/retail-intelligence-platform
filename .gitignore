@@ -227,3 +227,4 @@ __pycache__/
 ingestion/taxi/temp/
 requirements-lock.txt
 .vscode/
+ingestion/zones/temp/
