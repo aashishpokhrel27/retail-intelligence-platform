@@ -224,3 +224,6 @@ __pycache__/
 .databricks/
 .dbt/
 *.pyc
+ingestion/taxi/temp/
+requirements-lock.txt
+.vscode/
