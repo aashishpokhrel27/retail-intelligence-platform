@@ -230,3 +230,4 @@ requirements-lock.txt
 ingestion/zones/temp/
 ingestion/weather/temp/
 ingestion/complaints/temp/
+streaming/clickstream/local_output/
