@@ -231,3 +231,4 @@ ingestion/zones/temp/
 ingestion/weather/temp/
 ingestion/complaints/temp/
 streaming/clickstream/local_output/
+streaming/clickstream/inspect_output.py
