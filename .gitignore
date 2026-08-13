@@ -229,3 +229,4 @@ requirements-lock.txt
 .vscode/
 ingestion/zones/temp/
 ingestion/weather/temp/
+ingestion/complaints/temp/
