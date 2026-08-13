@@ -228,3 +228,4 @@ ingestion/taxi/temp/
 requirements-lock.txt
 .vscode/
 ingestion/zones/temp/
+ingestion/weather/temp/
