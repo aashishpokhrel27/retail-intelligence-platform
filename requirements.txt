@@ -8,3 +8,4 @@ pytest-cov
 black
 flake8
 pre-commit
+pyspark
