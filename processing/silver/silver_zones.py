@@ -1,31 +1,30 @@
-"""
-Silver Zones Processing
-Reads NYC Zone Lookup CSV from S3 Bronze, cleans and types columns,
-and writes a clean Parquet file to S3 Silver.
-"""
+# Databricks notebook source
+# MAGIC %pip install boto3
 
-import os
-from io import BytesIO, StringIO
+# COMMAND ----------
 
+# MAGIC %restart_python
+
+# COMMAND ----------
+
+# ── Cell 1: Imports and AWS credentials ──────────────────────────────────────
 import boto3
 import pandas as pd
-from dotenv import load_dotenv
+from io import StringIO
 from pyspark.sql.functions import col, trim, upper
 
-# ── Credentials ───────────────────────────────────────────────────────────────
-load_dotenv()
+# Fill in your credentials from .env
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_REGION     = os.getenv("AWS_REGION", "us-east-1")
 
-# ── Config ────────────────────────────────────────────────────────────────────
 BRONZE_BUCKET  = "retail-intel-bronze"
 SILVER_BUCKET  = "retail-intel-silver"
-BRONZE_KEY     = "zones/taxi_zone_lookup.csv"
-SILVER_KEY     = "zones/taxi_zone_lookup.parquet"
 
-# ── S3 Client ─────────────────────────────────────────────────────────────────
+# ── S3 client ─────────────────────────────────────────────────────────────────
 s3 = boto3.client(
     "s3",
     aws_access_key_id=AWS_ACCESS_KEY,
@@ -33,70 +32,77 @@ s3 = boto3.client(
     region_name=AWS_REGION
 )
 
+print("boto3 client ready")
 
-def read_bronze_zones() -> pd.DataFrame:
-    """Read NYC Zone Lookup CSV from S3 Bronze."""
-    obj = s3.get_object(Bucket=BRONZE_BUCKET, Key=BRONZE_KEY)
-    csv_content = obj["Body"].read().decode("utf-8")
-    pdf = pd.read_csv(StringIO(csv_content))
-    print(f"Bronze row count: {len(pdf)}")
-    return pdf
+# COMMAND ----------
 
+# ── Cell 2: Read zones CSV from S3 Bronze ────────────────────────────────────
+obj = s3.get_object(Bucket=BRONZE_BUCKET, Key="zones/taxi_zone_lookup.csv")
+csv_content = obj["Body"].read().decode("utf-8")
 
-def clean_zones(pdf: pd.DataFrame):
-    """Convert to Spark, cast types, clean strings."""
-    df = spark.createDataFrame(pdf)
+# Convert to pandas first, then to Spark
+pdf = pd.read_csv(StringIO(csv_content))
 
-    df_silver = (
-        df
-        .withColumnRenamed("LocationID", "location_id")
-        .withColumnRenamed("Borough", "borough")
-        .withColumnRenamed("Zone", "zone")
-        .withColumnRenamed("service_zone", "service_zone")
-        .withColumn("location_id", col("location_id").cast("integer"))
-        .withColumn("borough", trim(upper(col("borough"))))
-        .withColumn("zone", trim(col("zone")))
-        .withColumn("service_zone", trim(col("service_zone")))
-    )
+print(f"Row count: {len(pdf)}")
+print(f"Columns: {list(pdf.columns)}")
+pdf.head()
 
-    print(f"Silver row count: {df_silver.count()}")
-    df_silver.printSchema()
-    return df_silver
+# COMMAND ----------
 
+# ── Cell 3: Clean and enrich zones ───────────────────────────────────────────
+# Convert pandas to Spark DataFrame
+df = spark.createDataFrame(pdf)
 
-def write_silver_zones(df_silver) -> None:
-    """Write Silver zones to S3 as Parquet via boto3."""
-    pdf_silver = pd.DataFrame([row.asDict() for row in df_silver.collect()])
+# Clean: cast types, trim whitespace, standardize borough names
+df_silver = (
+    df
+    .withColumnRenamed("LocationID", "location_id")
+    .withColumnRenamed("Borough", "borough")
+    .withColumnRenamed("Zone", "zone")
+    .withColumnRenamed("service_zone", "service_zone")
+    .withColumn("location_id", col("location_id").cast("integer"))
+    .withColumn("borough", trim(upper(col("borough"))))
+    .withColumn("zone", trim(col("zone")))
+    .withColumn("service_zone", trim(col("service_zone")))
+)
 
-    buffer = BytesIO()
-    pdf_silver.to_parquet(buffer, index=False, engine="pyarrow")
-    buffer.seek(0)
+print(f"Silver row count: {df_silver.count()}")
+df_silver.printSchema()
+df_silver.show(10)
 
-    s3.put_object(
-        Bucket=SILVER_BUCKET,
-        Key=SILVER_KEY,
-        Body=buffer.getvalue()
-    )
-    print(f"Written {len(pdf_silver)} rows to s3://{SILVER_BUCKET}/{SILVER_KEY}")
+# COMMAND ----------
 
+# ── Cell 4: Write Silver zones to S3 as Parquet via boto3 ────────────────────
+from io import BytesIO
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-def validate_silver_zones() -> None:
-    """Read back and validate the Silver zones file."""
-    obj = s3.get_object(Bucket=SILVER_BUCKET, Key=SILVER_KEY)
-    pdf_check = pd.read_parquet(BytesIO(obj["Body"].read()))
+# Convert to pandas — collect to driver first
+pdf_silver = df_silver.collect()
+pdf_silver = pd.DataFrame([row.asDict() for row in pdf_silver])
 
-    print(f"Validation — Row count: {len(pdf_check)}")
-    print(f"Validation — Columns: {list(pdf_check.columns)}")
-    print(f"Validation — Boroughs: {sorted(pdf_check['borough'].dropna().unique())}")
+# Write parquet to buffer
+buffer = BytesIO()
+pdf_silver.to_parquet(buffer, index=False, engine="pyarrow")
+buffer.seek(0)
 
+# Upload to S3 Silver
+s3.put_object(
+    Bucket=SILVER_BUCKET,
+    Key="zones/taxi_zone_lookup.parquet",
+    Body=buffer.getvalue()
+)
 
-def main():
-    pdf_bronze = read_bronze_zones()
-    df_silver  = clean_zones(pdf_bronze)
-    write_silver_zones(df_silver)
-    validate_silver_zones()
-    print("Silver zones complete")
+print(f"Written {len(pdf_silver)} rows to s3://retail-intel-silver/zones/taxi_zone_lookup.parquet")
 
+# COMMAND ----------
 
-if __name__ == "__main__":
-    main()
+# ── Cell 5: Validate Silver zones ────────────────────────────────────────────
+# Read back from S3 to confirm write was successful
+obj = s3.get_object(Bucket=SILVER_BUCKET, Key="zones/taxi_zone_lookup.parquet")
+pdf_check = pd.read_parquet(BytesIO(obj["Body"].read()))
+
+print(f"Row count: {len(pdf_check)}")
+print(f"Columns: {list(pdf_check.columns)}")
+print(f"Boroughs: {sorted(pdf_check['borough'].dropna().unique())}")
+pdf_check.head()
