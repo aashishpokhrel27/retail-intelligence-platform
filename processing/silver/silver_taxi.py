@@ -201,23 +201,26 @@ print(f"\nTotal Silver taxi rows: {len(pdf_silver):,}")
 # COMMAND ----------
 
 # ── Write Silver taxi to S3 as Parquet ───────────────────────────────────────
-print("Writing to S3... this may take a few minutes for 17M rows")
+# ── Write Silver taxi partitioned by month ────────────────────────────────────
+for key, pdf_month in zip(taxi_keys, all_pdfs):
+    month = key.split("month=")[1].split("/")[0]
+    
+    buffer = BytesIO()
+    pdf_month.to_parquet(buffer, index=False, engine="pyarrow")
+    buffer.seek(0)
+    
+    s3_key = f"taxi/year=2024/month={month}/taxi_trips.parquet"
+    s3.put_object(
+        Bucket=SILVER_BUCKET,
+        Key=s3_key,
+        Body=buffer.getvalue()
+    )
+    print(f"Written month {month}: {len(pdf_month):,} rows → s3://retail-intel-silver/{s3_key}")
 
-buffer = BytesIO()
-pdf_silver.to_parquet(buffer, index=False, engine="pyarrow")
-buffer.seek(0)
-
-s3.put_object(
-    Bucket=SILVER_BUCKET,
-    Key="taxi/taxi_trips_silver.parquet",
-    Body=buffer.getvalue()
-)
-print(f"Written {len(pdf_silver):,} rows to s3://retail-intel-silver/taxi/taxi_trips_silver.parquet")
+print("\nAll months written successfully")
 
 # ── Validate ──────────────────────────────────────────────────────────────────
-obj = s3.get_object(Bucket=SILVER_BUCKET, Key="taxi/taxi_trips_silver.parquet")
-pdf_check = pd.read_parquet(BytesIO(obj["Body"].read()))
-print(f"Validation — Rows: {len(pdf_check):,}")
-print(f"Validation — Date range: {pdf_check['pickup_date'].min()} to {pdf_check['pickup_date'].max()}")
-print(f"Validation — Avg fare: ${pdf_check['fare_amount'].mean():.2f}")
-print(f"Validation — Payment types:\n{pdf_check['payment_type_desc'].value_counts()}")
+response = s3.list_objects_v2(Bucket=SILVER_BUCKET, Prefix="taxi/")
+for obj in response.get("Contents", []):
+    size_mb = obj["Size"] / 1024 / 1024
+    print(f"{obj['Key']} — {size_mb:.1f} MB")
