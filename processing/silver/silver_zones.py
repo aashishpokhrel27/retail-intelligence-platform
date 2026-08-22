@@ -49,6 +49,8 @@ print(f"Columns: {list(pdf.columns)}")
 pdf.head()
 
 # COMMAND ----------
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("silver-complaints").getOrCreate()
 
 # ── Cell 3: Clean and enrich zones ───────────────────────────────────────────
 # Convert pandas to Spark DataFrame

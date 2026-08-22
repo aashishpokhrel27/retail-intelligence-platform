@@ -43,8 +43,11 @@ content = json.loads(obj["Body"].read().decode("utf-8"))
 print(json.dumps(content, indent=2))
 
 # COMMAND ----------
-
+from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_date, when
+
+spark = SparkSession.builder.appName("silver-complaints").getOrCreate()
+
 
 # ── Read all organized weather files from S3 ──────────────────────────────────
 response = s3.list_objects_v2(Bucket=BRONZE_BUCKET, Prefix="weather/organized/")

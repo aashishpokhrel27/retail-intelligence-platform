@@ -50,7 +50,10 @@ print(json.dumps(records[0], indent=2))
 
 # COMMAND ----------
 
+from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, to_timestamp, trim, upper, length, when
+
+spark = SparkSession.builder.appName("silver-complaints").getOrCreate()
 
 # ── Read all complaint files from S3 ─────────────────────────────────────────
 response = s3.list_objects_v2(Bucket=BRONZE_BUCKET, Prefix="complaints/organized/")
